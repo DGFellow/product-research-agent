@@ -1,0 +1,3 @@
+[submodule "local-llm"]
+	path = local-llm
+	url = https://github.com/DGFellow/local-llm.git
