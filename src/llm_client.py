@@ -1,21 +1,15 @@
 import requests
 import json
-from typing import Optional
+from typing import Optional, Iterator
 from src.config import Config
 
 class LLMClient:
-    """Client for interacting with local-llm Flask API"""
-    
     def __init__(self, base_url: Optional[str] = None):
         self.base_url = base_url or Config.LLM_BASE_URL
         self.timeout = Config.LLM_TIMEOUT
         
-    def query(self, 
-              prompt: str, 
-              system: str = "",
-              temperature: float = 0.7,
-              max_tokens: int = 500) -> str:
-        """Query the local LLM via Flask API"""
+    def query(self, prompt: str, system: str = "", temperature: float = 0.7, max_tokens: int = 500) -> str:
+        """Standard query (non-streaming)"""
         try:
             messages = []
             if system:
@@ -24,11 +18,7 @@ class LLMClient:
             
             response = requests.post(
                 f"{self.base_url}/v1/chat/completions",
-                json={
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens
-                },
+                json={"messages": messages, "temperature": temperature, "max_tokens": max_tokens},
                 timeout=self.timeout
             )
             response.raise_for_status()
@@ -41,8 +31,36 @@ class LLMClient:
             print(f"❌ LLM response parsing failed: {e}")
             return ""
     
+    def query_stream(self, prompt: str, system: str = "", temperature: float = 0.7, max_tokens: int = 500) -> Iterator[str]:
+        """Streaming query - yields tokens one by one"""
+        try:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            
+            # Note: Your local-llm API needs to support streaming
+            # For now, we'll simulate streaming by splitting the response
+            response = requests.post(
+                f"{self.base_url}/v1/chat/completions",
+                json={"messages": messages, "temperature": temperature, "max_tokens": max_tokens},
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            full_response = response.json()['choices'][0]['message']['content']
+            
+            # Simulate streaming by yielding word by word
+            words = full_response.split()
+            for i, word in enumerate(words):
+                if i == 0:
+                    yield word
+                else:
+                    yield " " + word
+            
+        except Exception as e:
+            yield f"Error: {str(e)}"
+    
     def is_available(self) -> bool:
-        """Check if LLM service is available"""
         try:
             response = requests.get(f"{self.base_url}/health", timeout=5)
             return response.status_code == 200

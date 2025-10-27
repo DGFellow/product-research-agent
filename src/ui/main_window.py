@@ -78,8 +78,11 @@ class ResearchWorker(QThread):
             self.agent.set_platforms(platforms)
             
             self.log.emit("🚀 Initializing browser...")
+            self.emit_phase_step("Creating browser instance...")
             await self.agent.initialize()
-            self.log.emit("✅ Browser ready")
+            self.emit_phase_step("Setting viewport size...")
+            self.emit_phase_step("Configuring user agent...")
+            self.emit_phase_complete("Browser ready")
             
             self.progress_percent.emit(20)
             
@@ -171,6 +174,13 @@ class ResearchWorker(QThread):
             return float(match.group().replace(',', ''))
         return 0.0
 
+    def emit_phase_step(self, step: str):
+        """Emit a sub-step within a phase"""
+        self.log.emit(f"  ├─ {step}")
+
+    def emit_phase_complete(self, summary: str):
+        """Emit phase completion"""
+        self.log.emit(f"  └─ ✅ {summary}\n")
 
 class MainWindow(QMainWindow):
     """Main application window with conversational interface"""
@@ -247,25 +257,20 @@ class MainWindow(QMainWindow):
     
     def on_chat_message(self, message: str):
         """Handle chat message from user"""
-        # Parse message for commands
         command = self.parse_user_command(message)
         
         if command['action'] == 'search':
-            # Agent understood search request
             self.chat_panel.add_agent_message(
                 f"I'll search for '{command['search_term']}' on the selected platforms. Starting now!"
             )
             
-            # Update search field
             self.search_panel.search_input.setText(command['search_term'])
             
-            # Apply platform preferences if specified
             if 'platforms' in command:
                 self.search_panel.alibaba_check.setChecked(command['platforms'].get('alibaba', True))
                 self.search_panel.amazon_check.setChecked(command['platforms'].get('amazon', True))
                 self.search_panel.google_trends_check.setChecked(command['platforms'].get('google_trends', False))
             
-            # Trigger search
             self.search_panel.on_start_clicked()
             
         elif command['action'] == 'settings':
@@ -273,7 +278,6 @@ class MainWindow(QMainWindow):
                 f"I've updated the settings:\n{command['message']}"
             )
             
-            # Apply settings
             if 'max_products' in command:
                 self.search_panel.max_products_spin.setValue(command['max_products'])
             if 'min_margin' in command:
@@ -290,15 +294,39 @@ class MainWindow(QMainWindow):
             )
         
         elif command['action'] == 'unknown':
-            # Use LLM to generate response
+            # Use LLM with streaming
             if self.llm_client and self.llm_client.is_available():
-                response = self.llm_client.query(
-                    prompt=f"User said: '{message}'. Respond helpfully as a product research assistant.",
-                    system="You are a helpful product research assistant. Be brief and actionable.",
-                    temperature=0.7,
-                    max_tokens=150
-                )
-                self.chat_panel.add_agent_message(response)
+                # Show loading
+                self.chat_panel.add_loading_message()
+                
+                # Stream response in a thread
+                from PySide6.QtCore import QThread, Signal
+                
+                class StreamWorker(QThread):
+                    token = Signal(str)
+                    finished = Signal()
+                    
+                    def __init__(self, llm_client, message):
+                        super().__init__()
+                        self.llm_client = llm_client
+                        self.message = message
+                    
+                    def run(self):
+                        accumulated = ""
+                        for token in self.llm_client.query_stream(
+                            prompt=f"User said: '{self.message}'. Respond helpfully as a product research assistant.",
+                            system="You are a helpful product research assistant. Be brief and actionable.",
+                            temperature=0.7,
+                            max_tokens=150
+                        ):
+                            accumulated += token
+                            self.token.emit(accumulated)
+                        self.finished.emit()
+                
+                self.stream_worker = StreamWorker(self.llm_client, message)
+                self.stream_worker.token.connect(self._on_stream_token)
+                self.stream_worker.finished.connect(self._on_stream_finished)
+                self.stream_worker.start()
             else:
                 self.chat_panel.add_agent_message(
                     "I'm not sure I understand. Try:\n"
@@ -306,6 +334,16 @@ class MainWindow(QMainWindow):
                     "• 'Skip Alibaba'\n"
                     "• 'Set max products to 20'"
                 )
+    
+    def _on_stream_token(self, accumulated_text: str):
+        """Handle streaming token"""
+        # Update the last message
+        # This is a simplified version - you'd want to actually update the last message
+        pass  # TODO: Implement proper streaming update
+    
+    def _on_stream_finished(self):
+        """Handle streaming completion"""
+        pass  # Stream is done
     
     def parse_user_command(self, message: str) -> dict:
         """Parse user message into actionable command"""

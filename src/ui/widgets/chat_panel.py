@@ -4,29 +4,32 @@ Conversational interface for interacting with the AI agent
 """
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
-    QLineEdit, QPushButton, QScrollArea
+    QLineEdit, QPushButton
 )
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QFont, QTextCursor
+from PySide6.QtGui import QTextCursor
 from datetime import datetime
 
 class ChatPanel(QWidget):
     """Left panel for conversational agent interaction"""
     
-    # Signals
-    message_sent = Signal(str)  # User message
-    command_detected = Signal(dict)  # Parsed command (e.g., {"action": "search", "term": "..."})
+    message_sent = Signal(str)
+    command_detected = Signal(dict)
     
     def __init__(self):
         super().__init__()
         self.chat_history = []
         self.init_ui()
+        # Your updated welcome messages go here
         self.add_system_message("👋 Hello! I'm your AI Product Research Assistant.")
-        self.add_system_message("You can ask me to search for products, adjust settings, or get recommendations.")
-        self.add_system_message("\nExample commands:")
-        self.add_system_message("• 'Search for wireless earbuds on Amazon only'")
-        self.add_system_message("• 'Find heated gloves with good profit margins'")
-        self.add_system_message("• 'Skip Alibaba and search Google Trends'")
+        self.add_system_message("\n📚 What I can do:")
+        self.add_system_message("• Search products with natural language")
+        self.add_system_message("• Control which platforms to search")
+        self.add_system_message("• Adjust settings on the fly")
+        self.add_system_message("\n💡 Try these:")
+        self.add_system_message("🔹 'Search for wireless earbuds on Amazon only'")
+        self.add_system_message("🔹 'Find phone cases but skip Alibaba'")
+        self.add_system_message("🔹 'Set max products to 20'")
     
     def init_ui(self):
         """Initialize the chat panel UI"""
@@ -122,44 +125,7 @@ class ChatPanel(QWidget):
         button_layout.addWidget(self.clear_button)
         
         input_layout.addLayout(button_layout)
-        
         layout.addLayout(input_layout)
-        
-        # Quick actions (optional)
-        quick_actions_label = QLabel("Quick Actions:")
-        quick_actions_label.setStyleSheet("font-size: 10px; color: #666; margin-top: 5px;")
-        layout.addWidget(quick_actions_label)
-        
-        quick_buttons_layout = QHBoxLayout()
-        quick_buttons_layout.setSpacing(5)
-        
-        self.quick_amazon = QPushButton("Amazon only")
-        self.quick_amazon.setStyleSheet(self._get_quick_button_style())
-        self.quick_amazon.clicked.connect(lambda: self.send_quick_command("Search Amazon only"))
-        quick_buttons_layout.addWidget(self.quick_amazon)
-        
-        self.quick_trends = QPushButton("Check trends")
-        self.quick_trends.setStyleSheet(self._get_quick_button_style())
-        self.quick_trends.clicked.connect(lambda: self.send_quick_command("Show Google Trends"))
-        quick_buttons_layout.addWidget(self.quick_trends)
-        
-        layout.addLayout(quick_buttons_layout)
-    
-    def _get_quick_button_style(self) -> str:
-        """Style for quick action buttons"""
-        return """
-            QPushButton {
-                background-color: #e0e0e0;
-                color: #333;
-                padding: 5px 10px;
-                border-radius: 3px;
-                border: 1px solid #ccc;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #d0d0d0;
-            }
-        """
     
     def on_send_clicked(self):
         """Handle send button click"""
@@ -168,26 +134,15 @@ class ChatPanel(QWidget):
         if not message:
             return
         
-        # Add user message to display
         self.add_user_message(message)
-        
-        # Clear input
         self.input_field.clear()
-        
-        # Emit signal
         self.message_sent.emit(message)
         
-        # Store in history
         self.chat_history.append({
             'role': 'user',
             'content': message,
             'timestamp': datetime.now()
         })
-    
-    def send_quick_command(self, command: str):
-        """Send a quick command"""
-        self.input_field.setText(command)
-        self.on_send_clicked()
     
     def add_user_message(self, message: str):
         """Add user message to chat display"""
@@ -227,12 +182,34 @@ class ChatPanel(QWidget):
         self.chat_display.append(html)
         self._scroll_to_bottom()
         
-        # Store in history
         self.chat_history.append({
             'role': 'agent',
             'content': message,
             'timestamp': datetime.now()
         })
+    
+    def add_agent_message_streaming(self, message: str):
+        """Add/update agent message with streaming effect"""
+        # Remove the last message if it's a partial agent message
+        cursor = self.chat_display.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        
+        timestamp = datetime.now().strftime("%H:%M")
+        
+        html = f"""
+        <div style='margin-bottom: 10px;' id='streaming-message'>
+            <div style='background-color: #e3f2fd; color: #333; padding: 8px 12px; 
+                        border-radius: 12px 12px 12px 0; display: inline-block; 
+                        max-width: 80%; float: left; margin-right: 20%;'>
+                <strong>🤖 Agent</strong> <span style='font-size: 9px; opacity: 0.6;'>{timestamp}</span><br>
+                {message}
+            </div>
+            <div style='clear: both;'></div>
+        </div>
+        """
+        
+        self.chat_display.append(html)
+        self._scroll_to_bottom()
     
     def add_system_message(self, message: str):
         """Add system message to chat display"""
@@ -242,6 +219,23 @@ class ChatPanel(QWidget):
                         border-radius: 5px; display: inline-block; font-size: 11px;'>
                 {message}
             </div>
+        </div>
+        """
+        
+        self.chat_display.append(html)
+        self._scroll_to_bottom()
+    
+    def add_loading_message(self):
+        """Add a loading indicator"""
+        html = """
+        <div style='margin-bottom: 10px;' id='loading-message'>
+            <div style='background-color: #e3f2fd; color: #333; padding: 8px 12px; 
+                        border-radius: 12px 12px 12px 0; display: inline-block; 
+                        max-width: 80%; float: left; margin-right: 20%;'>
+                <strong>🤖 Agent</strong><br>
+                <span style='color: #666;'>●●● Thinking...</span>
+            </div>
+            <div style='clear: both;'></div>
         </div>
         """
         
@@ -264,5 +258,3 @@ class ChatPanel(QWidget):
         """Enable/disable input during research"""
         self.input_field.setEnabled(enabled)
         self.send_button.setEnabled(enabled)
-        self.quick_amazon.setEnabled(enabled)
-        self.quick_trends.setEnabled(enabled)
