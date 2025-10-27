@@ -1,6 +1,6 @@
 """
 Main Window
-Orchestrates all UI panels and coordinates the research workflow
+Orchestrates all UI panels with conversational interface
 """
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
@@ -9,8 +9,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon
 import asyncio
+import re
 from pathlib import Path
 
+from src.ui.widgets.chat_panel import ChatPanel
 from src.ui.widgets.search_panel import SearchPanel
 from src.ui.widgets.progress_panel import ProgressPanel
 from src.ui.widgets.results_panel import ResultsPanel
@@ -24,13 +26,13 @@ from src.models import ProductInfo
 
 class ResearchWorker(QThread):
     """Background thread for running research"""
-    progress = Signal(str)           # Progress messages
-    log = Signal(str)                # Log messages
-    phase_changed = Signal(str)      # Current phase
-    progress_percent = Signal(int)   # Progress percentage
-    result_added = Signal(dict)      # New result to add
-    finished = Signal(list)          # Final products list
-    error = Signal(str)              # Error messages
+    progress = Signal(str)
+    log = Signal(str)
+    phase_changed = Signal(str)
+    progress_percent = Signal(int)
+    result_added = Signal(dict)
+    finished = Signal(list)
+    error = Signal(str)
     
     def __init__(self, search_params):
         super().__init__()
@@ -39,11 +41,9 @@ class ResearchWorker(QThread):
         self._is_running = True
     
     def stop(self):
-        """Request worker to stop"""
         self._is_running = False
     
     def run(self):
-        """Run the research in background thread"""
         try:
             asyncio.run(self._run_research())
         except Exception as e:
@@ -52,21 +52,18 @@ class ResearchWorker(QThread):
             self.error.emit(traceback.format_exc())
     
     async def _run_research(self):
-        """Actual research logic with enhanced progress tracking"""
         try:
             search_term = self.search_params['search_term']
-            platforms = self.search_params['platforms']  # ← This exists
+            platforms = self.search_params['platforms']
             max_products = self.search_params['max_products']
             headless = self.search_params['headless']
             
-            # Setup
             Config.HEADLESS = headless
             Config.MAX_PRODUCTS_PER_SITE = max_products
             
             self.phase_changed.emit("Initialization")
             self.progress_percent.emit(5)
             
-            # Connect to LLM
             self.log.emit("🤖 Connecting to local LLM...")
             llm = LLMClient()
             
@@ -77,9 +74,8 @@ class ResearchWorker(QThread):
             
             self.progress_percent.emit(10)
             
-            # Initialize agent
             self.agent = ProductResearchAgent(llm)
-            self.agent.set_platforms(platforms)  # ← ADD THIS LINE!
+            self.agent.set_platforms(platforms)
             
             self.log.emit("🚀 Initializing browser...")
             await self.agent.initialize()
@@ -87,17 +83,14 @@ class ResearchWorker(QThread):
             
             self.progress_percent.emit(20)
             
-            # Phase 1: Market Research (if enabled)
             if platforms['google_trends']:
                 self.phase_changed.emit("Market Research")
                 self.log.emit("\n" + "="*60)
                 self.log.emit("📊 Phase 1: Market Research (Google Trends)")
                 self.log.emit("="*60)
-                # TODO: Implement Google Trends
                 self.log.emit("⚠️  Google Trends: Coming soon!")
                 self.progress_percent.emit(30)
             
-            # Phase 2: Product Research
             self.phase_changed.emit("Product Research")
             self.log.emit("\n" + "="*60)
             self.log.emit(f"🔬 Researching: {search_term}")
@@ -107,18 +100,16 @@ class ResearchWorker(QThread):
             
             products = await self.agent.research_product(search_term)
             
-            # Emit results as they come in
             for product in products:
                 if not self._is_running:
                     break
                 
-                # Calculate basic metrics (will be enhanced later)
                 result_data = {
                     'source': product.source,
                     'product': product.title,
                     'supplier_cost': self._extract_price(product.price) if product.source == 'alibaba' else None,
                     'amazon_price': self._extract_price(product.price) if product.source == 'amazon' else None,
-                    'profit': 0.0,  # Will calculate when we have both prices
+                    'profit': 0.0,
                     'margin': 0.0
                 }
                 
@@ -131,7 +122,6 @@ class ResearchWorker(QThread):
                 self.finished.emit([])
                 return
             
-            # Phase 3: Analysis
             self.phase_changed.emit("Analysis")
             self.log.emit(f"\n{'='*60}")
             self.log.emit("📊 Generating Analysis...")
@@ -173,11 +163,9 @@ class ResearchWorker(QThread):
                 await self.agent.close()
     
     def _extract_price(self, price_str: str) -> float:
-        """Extract numeric price from string"""
         if not price_str or price_str == "N/A":
             return 0.0
         
-        import re
         match = re.search(r'[\d,]+\.?\d*', str(price_str))
         if match:
             return float(match.group().replace(',', ''))
@@ -185,56 +173,65 @@ class ResearchWorker(QThread):
 
 
 class MainWindow(QMainWindow):
-    """Main application window with modular panel layout"""
+    """Main application window with conversational interface"""
     
     def __init__(self):
         super().__init__()
         self.worker = None
         self.results_data = []
+        self.llm_client = None
         self.init_ui()
+        self.init_llm()
+    
+    def init_llm(self):
+        """Initialize LLM client for chat"""
+        self.llm_client = LLMClient()
+        if not self.llm_client.is_available():
+            self.chat_panel.add_system_message("⚠️ LLM API not running. Chat features limited.")
     
     def init_ui(self):
-        """Initialize the main window UI"""
-        self.setWindowTitle("🤖 AI Product Research Agent - Professional Edition")
-        self.setGeometry(100, 50, 1600, 900)
+        self.setWindowTitle("🤖 AI Product Research Agent - Professional Edition v2.0")
+        self.setGeometry(50, 50, 1800, 900)
         
-        # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Create main horizontal splitter (3 panels)
+        # Create main horizontal splitter (4 panels)
         main_splitter = QSplitter(Qt.Horizontal)
         
-        # Left Panel: Search Configuration
+        # Panel 1: Chat Agent (NEW!)
+        self.chat_panel = ChatPanel()
+        self.chat_panel.message_sent.connect(self.on_chat_message)
+        main_splitter.addWidget(self.chat_panel)
+        
+        # Panel 2: Search Configuration
         self.search_panel = SearchPanel()
         self.search_panel.search_requested.connect(self.on_search_requested)
         self.search_panel.stop_button.clicked.connect(self.stop_research)
         main_splitter.addWidget(self.search_panel)
         
-        # Center Panel: Progress & Activity
+        # Panel 3: Progress & Activity
         self.progress_panel = ProgressPanel()
         main_splitter.addWidget(self.progress_panel)
         
-        # Right Panel: Results
+        # Panel 4: Results
         self.results_panel = ResultsPanel()
         main_splitter.addWidget(self.results_panel)
         
-        # Set initial sizes (left: 300px, center: flexible, right: 500px)
-        main_splitter.setSizes([300, 600, 500])
+        # Set initial sizes (chat: 350px, search: 300px, progress: 550px, results: 600px)
+        main_splitter.setSizes([350, 300, 550, 600])
         
-        main_layout.addWidget(main_splitter, 3)  # Takes 75% of height
+        main_layout.addWidget(main_splitter, 3)
         
         # Bottom Panel: Analysis
         self.analysis_panel = AnalysisPanel()
-        main_layout.addWidget(self.analysis_panel, 1)  # Takes 25% of height
+        main_layout.addWidget(self.analysis_panel, 1)
         
-        # Status bar
-        self.statusBar().showMessage("Ready to start research")
+        self.statusBar().showMessage("Ready - Chat with the agent or configure search")
         
-        # Style the main window
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #f5f5f5;
@@ -248,45 +245,161 @@ class MainWindow(QMainWindow):
             }
         """)
     
+    def on_chat_message(self, message: str):
+        """Handle chat message from user"""
+        # Parse message for commands
+        command = self.parse_user_command(message)
+        
+        if command['action'] == 'search':
+            # Agent understood search request
+            self.chat_panel.add_agent_message(
+                f"I'll search for '{command['search_term']}' on the selected platforms. Starting now!"
+            )
+            
+            # Update search field
+            self.search_panel.search_input.setText(command['search_term'])
+            
+            # Apply platform preferences if specified
+            if 'platforms' in command:
+                self.search_panel.alibaba_check.setChecked(command['platforms'].get('alibaba', True))
+                self.search_panel.amazon_check.setChecked(command['platforms'].get('amazon', True))
+                self.search_panel.google_trends_check.setChecked(command['platforms'].get('google_trends', False))
+            
+            # Trigger search
+            self.search_panel.on_start_clicked()
+            
+        elif command['action'] == 'settings':
+            self.chat_panel.add_agent_message(
+                f"I've updated the settings:\n{command['message']}"
+            )
+            
+            # Apply settings
+            if 'max_products' in command:
+                self.search_panel.max_products_spin.setValue(command['max_products'])
+            if 'min_margin' in command:
+                self.search_panel.min_margin_spin.setValue(command['min_margin'])
+            
+        elif command['action'] == 'help':
+            self.chat_panel.add_agent_message(
+                "I can help you with:\n"
+                "• Searching for products\n"
+                "• Adjusting search settings\n"
+                "• Analyzing profit margins\n"
+                "• Comparing platforms\n\n"
+                "Try: 'Search for wireless earbuds on Amazon' or 'Set minimum margin to 40%'"
+            )
+        
+        elif command['action'] == 'unknown':
+            # Use LLM to generate response
+            if self.llm_client and self.llm_client.is_available():
+                response = self.llm_client.query(
+                    prompt=f"User said: '{message}'. Respond helpfully as a product research assistant.",
+                    system="You are a helpful product research assistant. Be brief and actionable.",
+                    temperature=0.7,
+                    max_tokens=150
+                )
+                self.chat_panel.add_agent_message(response)
+            else:
+                self.chat_panel.add_agent_message(
+                    "I'm not sure I understand. Try:\n"
+                    "• 'Search for [product]'\n"
+                    "• 'Skip Alibaba'\n"
+                    "• 'Set max products to 20'"
+                )
+    
+    def parse_user_command(self, message: str) -> dict:
+        """Parse user message into actionable command"""
+        message_lower = message.lower()
+        
+        # Search commands
+        search_patterns = [
+            r'search for (.+?)(?:\s+on\s+(.+?))?$',
+            r'find (.+?)(?:\s+on\s+(.+?))?$',
+            r'look for (.+?)(?:\s+on\s+(.+?))?$',
+        ]
+        
+        for pattern in search_patterns:
+            match = re.search(pattern, message_lower)
+            if match:
+                search_term = match.group(1).strip()
+                platforms_str = match.group(2) if match.lastindex > 1 else None
+                
+                # Parse platform preferences
+                platforms = {'alibaba': True, 'amazon': True, 'google_trends': False}
+                
+                if platforms_str:
+                    if 'amazon' in platforms_str and 'alibaba' not in platforms_str:
+                        platforms = {'alibaba': False, 'amazon': True, 'google_trends': False}
+                    elif 'alibaba' in platforms_str and 'amazon' not in platforms_str:
+                        platforms = {'alibaba': True, 'amazon': False, 'google_trends': False}
+                
+                # Handle "only" keyword
+                if 'only amazon' in message_lower or 'just amazon' in message_lower:
+                    platforms = {'alibaba': False, 'amazon': True, 'google_trends': False}
+                elif 'only alibaba' in message_lower or 'just alibaba' in message_lower:
+                    platforms = {'alibaba': True, 'amazon': False, 'google_trends': False}
+                
+                # Handle skip commands
+                if 'skip alibaba' in message_lower or 'no alibaba' in message_lower:
+                    platforms['alibaba'] = False
+                if 'skip amazon' in message_lower or 'no amazon' in message_lower:
+                    platforms['amazon'] = False
+                
+                return {
+                    'action': 'search',
+                    'search_term': search_term,
+                    'platforms': platforms
+                }
+        
+        # Settings commands
+        if 'set max' in message_lower or 'maximum' in message_lower:
+            match = re.search(r'(\d+)', message)
+            if match:
+                return {
+                    'action': 'settings',
+                    'max_products': int(match.group(1)),
+                    'message': f"Max products set to {match.group(1)}"
+                }
+        
+        if 'margin' in message_lower and any(word in message_lower for word in ['set', 'minimum', 'target']):
+            match = re.search(r'(\d+)', message)
+            if match:
+                return {
+                    'action': 'settings',
+                    'min_margin': float(match.group(1)),
+                    'message': f"Target margin set to {match.group(1)}%"
+                }
+        
+        # Help command
+        if any(word in message_lower for word in ['help', 'what can you do', 'how', 'commands']):
+            return {'action': 'help'}
+        
+        # Unknown
+        return {'action': 'unknown'}
+    
     def on_search_requested(self, search_params: dict):
         """Handle search request from search panel"""
         search_term = search_params['search_term']
         
-        # Validate platforms
         if not any(search_params['platforms'].values()):
-            QMessageBox.warning(
-                self,
-                "No Platforms Selected",
-                "Please select at least one platform to search!"
-            )
+            QMessageBox.warning(self, "No Platforms Selected", "Please select at least one platform!")
             return
         
-        # Check if LLM is running (if Google Trends or detailed analysis requested)
-        if search_params['platforms']['google_trends'] or search_params['detailed']:
-            llm = LLMClient()
-            if not llm.is_available():
-                reply = QMessageBox.question(
-                    self,
-                    "LLM Not Available",
-                    "Local LLM API is not running. Some features will be limited.\n\n"
-                    "Start local-llm API server first for full AI features.\n\n"
-                    "Continue anyway?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if reply == QMessageBox.No:
-                    return
+        # Add agent message
+        enabled_platforms = [k for k, v in search_params['platforms'].items() if v]
+        self.chat_panel.add_agent_message(
+            f"Starting research for '{search_term}' on: {', '.join(enabled_platforms)}"
+        )
         
-        # Clear previous results
         self.results_panel.clear_results()
         self.progress_panel.clear_log()
         self.progress_panel.set_progress(0)
         self.results_data = []
         
-        # Update UI state
         self.search_panel.set_research_state(True)
+        self.chat_panel.set_input_enabled(False)
         self.statusBar().showMessage(f"Researching: {search_term}...")
         
-        # Start worker thread
         self.worker = ResearchWorker(search_params)
         self.worker.log.connect(self.progress_panel.append_log)
         self.worker.phase_changed.connect(self.progress_panel.set_phase)
@@ -297,10 +410,8 @@ class MainWindow(QMainWindow):
         self.worker.start()
     
     def on_result_added(self, result_data: dict):
-        """Handle new result from worker"""
         self.results_data.append(result_data)
         
-        # Add to results table
         self.results_panel.add_result(
             source=result_data['source'],
             product=result_data['product'],
@@ -310,15 +421,19 @@ class MainWindow(QMainWindow):
             margin=result_data.get('margin', 0.0)
         )
         
-        # Update analysis panel
         self.update_analysis()
     
     def on_research_finished(self, products: list):
-        """Handle research completion"""
         self.search_panel.set_research_state(False)
+        self.chat_panel.set_input_enabled(True)
         self.statusBar().showMessage(f"Complete! Found {len(products)} products")
         
-        # Calculate final profit analysis
+        # Agent summary
+        self.chat_panel.add_agent_message(
+            f"✅ Research complete! Found {len(products)} products. "
+            f"Check the results panel for details."
+        )
+        
         self.calculate_profit_analysis()
         
         QMessageBox.information(
@@ -329,30 +444,35 @@ class MainWindow(QMainWindow):
         )
     
     def on_error(self, error_msg: str):
-        """Handle errors"""
         self.progress_panel.append_log(f"\n❌ Error: {error_msg}")
         self.search_panel.set_research_state(False)
+        self.chat_panel.set_input_enabled(True)
         self.statusBar().showMessage("Error occurred")
         
-        if "Traceback" not in error_msg:  # Don't show full traceback in dialog
+        # Notify in chat
+        self.chat_panel.add_agent_message(
+            f"❌ An error occurred: {error_msg[:100]}... Check the progress log for details."
+        )
+        
+        if "Traceback" not in error_msg:
             QMessageBox.critical(self, "Error", f"An error occurred:\n\n{error_msg}")
     
     def stop_research(self):
-        """Stop the research process"""
         if self.worker and self.worker.isRunning():
             self.worker.stop()
             self.worker.terminate()
             self.worker.wait()
             self.progress_panel.append_log("\n❌ Research stopped by user")
             self.search_panel.set_research_state(False)
+            self.chat_panel.set_input_enabled(True)
             self.statusBar().showMessage("Stopped")
+            
+            self.chat_panel.add_agent_message("Research stopped. Ready for new commands.")
     
     def update_analysis(self):
-        """Update analysis panel with current results"""
         if not self.results_data:
             return
         
-        # Calculate stats
         margins = [r['margin'] for r in self.results_data if r.get('margin', 0) > 0]
         
         if margins:
@@ -368,7 +488,6 @@ class MainWindow(QMainWindow):
         
         self.analysis_panel.update_stats(avg_margin, best_margin, total, viable)
         
-        # Update opportunities (top 3 by margin)
         sorted_results = sorted(
             [r for r in self.results_data if r.get('margin', 0) > 0],
             key=lambda x: x.get('margin', 0),
@@ -377,13 +496,9 @@ class MainWindow(QMainWindow):
         self.analysis_panel.update_opportunities(sorted_results[:3])
     
     def calculate_profit_analysis(self):
-        """Calculate detailed profit analysis"""
-        # TODO: Implement sophisticated profit calculation
-        # For now, just use basic margin calculation
         self.update_analysis()
     
     def closeEvent(self, event):
-        """Handle window close event"""
         if self.worker and self.worker.isRunning():
             reply = QMessageBox.question(
                 self,
