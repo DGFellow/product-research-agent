@@ -54,9 +54,8 @@ class ResearchWorker(QThread):
     async def _run_research(self):
         """Actual research logic with enhanced progress tracking"""
         try:
-            # Extract parameters
             search_term = self.search_params['search_term']
-            platforms = self.search_params['platforms']
+            platforms = self.search_params['platforms']  # ← This exists
             max_products = self.search_params['max_products']
             headless = self.search_params['headless']
             
@@ -80,6 +79,8 @@ class ResearchWorker(QThread):
             
             # Initialize agent
             self.agent = ProductResearchAgent(llm)
+            self.agent.set_platforms(platforms)  # ← ADD THIS LINE!
+            
             self.log.emit("🚀 Initializing browser...")
             await self.agent.initialize()
             self.log.emit("✅ Browser ready")
