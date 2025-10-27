@@ -21,3 +21,5 @@ pydantic==2.5.3
 
 # For local-llm integration (will be in submodule)
 # PySide6==6.6.0  ← Don't add here, only in local-llm
+
+PySide6==6.6.0
