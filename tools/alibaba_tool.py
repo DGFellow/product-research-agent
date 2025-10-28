@@ -28,12 +28,14 @@ class AlibabaScraperTool(BaseTool):
             search_url = f"{self.BASE_URL}/trade/search?SearchText={criteria.search_term.replace(' ', '+')}"
             
             self.log("  ├─ Navigating to Alibaba search...", "")
+            await self.page.goto(search_url, timeout=60000)
             
-            # Navigate with longer timeout
-            await self.page.goto(search_url, timeout=60000)  # 60 seconds
-            await asyncio.sleep(5)  # Wait for JS to render
+            self.log("  ├─ Waiting for page to load...", "")
+            await asyncio.sleep(5)
             
-            # Try multiple selectors (Alibaba changes them often)
+            self.log("  ├─ Looking for product listings...", "")
+            
+            # Try multiple selectors
             selectors = [
                 '.organic-list-offer',
                 '[class*="search-card"]',
@@ -44,22 +46,25 @@ class AlibabaScraperTool(BaseTool):
             products = []
             for selector in selectors:
                 try:
+                    self.log(f"    ├─ Trying selector: {selector}", "")
                     await self.page.wait_for_selector(selector, timeout=10000)
                     products = await self._extract_products(selector, criteria.max_results)
                     if products:
+                        self.log(f"    └─ ✅ Found products with selector!", "")
                         break
                 except:
+                    self.log(f"    ├─ Selector failed, trying next...", "")
                     continue
             
             if not products:
-                self.log("No products found - Alibaba may be blocking", "⚠️")
+                self.log("  └─ ⚠️  No products found - may be blocked", "")
             else:
-                self.log(f"Found {len(products)} products", "✅")
+                self.log(f"  └─ ✅ Extracted {len(products)} products", "")
             
             return {"success": True, "products": products, "count": len(products)}
             
         except Exception as e:
-            self.log(f"Search failed: {e}", "❌")
+            self.log(f"  └─ ❌ Search failed: {e}", "")
             return {"success": False, "error": str(e), "products": []}
     
     async def _extract_products(self, selector: str, max_results: int) -> List[ProductInfo]:
