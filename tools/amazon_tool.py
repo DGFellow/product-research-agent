@@ -17,19 +17,26 @@ class AmazonScraperTool(BaseTool):
         self.log(f"Searching for: {criteria.search_term}", "🔍")
         
         try:
+            self.log("  ├─ Building search URL...", "")
             search_url = f"{self.BASE_URL}/s?k={criteria.search_term.replace(' ', '+')}"
+            
+            self.log("  ├─ Navigating to Amazon...", "")
             await self.page.goto(search_url, timeout=60000)
+            
+            self.log("  ├─ Waiting for page load...", "")
             await asyncio.sleep(3)
             
+            self.log("  ├─ Looking for search results...", "")
             await self.page.wait_for_selector('[data-component-type="s-search-result"]', timeout=15000)
             
+            self.log("  ├─ Extracting product data...", "")
             products = await self._extract_products(criteria.max_results)
             
-            self.log(f"Found {len(products)} products", "✅")
+            self.log(f"  └─ ✅ Found {len(products)} products", "")
             return {"success": True, "products": products, "count": len(products)}
             
         except Exception as e:
-            self.log(f"Search failed: {e}", "❌")
+            self.log(f"  └─ ❌ Search failed: {e}", "")
             return {"success": False, "error": str(e), "products": []}
     
     async def _extract_products(self, max_results: int) -> List[ProductInfo]:
