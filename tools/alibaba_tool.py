@@ -17,13 +17,17 @@ class AlibabaScraperTool(BaseTool):
         self.log(f"Searching for: {criteria.search_term}", "🔍")
         
         try:
-            # Set user agent to look like real browser
+            # Add detailed logging
+            self.log("  ├─ Setting up request headers...", "")
+            
             await self.page.set_extra_http_headers({
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept-Language': 'en-US,en;q=0.9',
             })
             
             search_url = f"{self.BASE_URL}/trade/search?SearchText={criteria.search_term.replace(' ', '+')}"
+            
+            self.log("  ├─ Navigating to Alibaba search...", "")
             
             # Navigate with longer timeout
             await self.page.goto(search_url, timeout=60000)  # 60 seconds
