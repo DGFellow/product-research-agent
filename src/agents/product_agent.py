@@ -27,14 +27,22 @@ class ProductResearchAgent:
     
     async def initialize(self):
         print("🚀 Initializing browser...")
+        print("  ├─ Starting Playwright...")
         playwright = await async_playwright().start()
+        
+        print("  ├─ Launching Chromium...")
         self.browser = await playwright.chromium.launch(headless=self.config.HEADLESS)
+        
+        print("  ├─ Creating new page context...")
         self.page = await self.browser.new_page()
+        
+        print("  ├─ Setting viewport size...")
         await self.page.set_viewport_size({
             "width": self.config.VIEWPORT_WIDTH,
             "height": self.config.VIEWPORT_HEIGHT
         })
-        print("✅ Browser ready")
+        
+        print("  └─ ✅ Browser ready")
     
     async def close(self):
         if self.browser:
