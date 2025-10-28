@@ -294,39 +294,15 @@ class MainWindow(QMainWindow):
             )
         
         elif command['action'] == 'unknown':
-            # Use LLM with streaming
+            # Use LLM to generate response
             if self.llm_client and self.llm_client.is_available():
-                # Show loading
-                self.chat_panel.add_loading_message()
-                
-                # Stream response in a thread
-                from PySide6.QtCore import QThread, Signal
-                
-                class StreamWorker(QThread):
-                    token = Signal(str)
-                    finished = Signal()
-                    
-                    def __init__(self, llm_client, message):
-                        super().__init__()
-                        self.llm_client = llm_client
-                        self.message = message
-                    
-                    def run(self):
-                        accumulated = ""
-                        for token in self.llm_client.query_stream(
-                            prompt=f"User said: '{self.message}'. Respond helpfully as a product research assistant.",
-                            system="You are a helpful product research assistant. Be brief and actionable.",
-                            temperature=0.7,
-                            max_tokens=150
-                        ):
-                            accumulated += token
-                            self.token.emit(accumulated)
-                        self.finished.emit()
-                
-                self.stream_worker = StreamWorker(self.llm_client, message)
-                self.stream_worker.token.connect(self._on_stream_token)
-                self.stream_worker.finished.connect(self._on_stream_finished)
-                self.stream_worker.start()
+                response = self.llm_client.query(
+                    prompt=f"User said: '{message}'. Respond helpfully as a product research assistant.",
+                    system="You are a helpful product research assistant. Be brief and actionable.",
+                    temperature=0.7,
+                    max_tokens=150
+                )
+                self.chat_panel.add_agent_message(response)
             else:
                 self.chat_panel.add_agent_message(
                     "I'm not sure I understand. Try:\n"
@@ -334,16 +310,6 @@ class MainWindow(QMainWindow):
                     "• 'Skip Alibaba'\n"
                     "• 'Set max products to 20'"
                 )
-    
-    def _on_stream_token(self, accumulated_text: str):
-        """Handle streaming token"""
-        # Update the last message
-        # This is a simplified version - you'd want to actually update the last message
-        pass  # TODO: Implement proper streaming update
-    
-    def _on_stream_finished(self):
-        """Handle streaming completion"""
-        pass  # Stream is done
     
     def parse_user_command(self, message: str) -> dict:
         """Parse user message into actionable command"""
@@ -554,3 +520,29 @@ class MainWindow(QMainWindow):
                 event.ignore()
         else:
             event.accept()
+
+    def handle_unknown_command(self, message: str):
+        """Handle unknown commands with LLM"""
+        if self.llm_client and self.llm_client.is_available():
+            # Show loading
+            self.chat_panel.add_loading_message()
+            
+            # Use simple query for now (streaming in Qt is complex)
+            response = self.llm_client.query(
+                prompt=f"User said: '{message}'. Respond helpfully as a product research assistant.",
+                system="You are a helpful product research assistant. Be brief and actionable.",
+                temperature=0.7,
+                max_tokens=150
+            )
+            
+            # Remove loading and show response
+            # Note: This is immediate, not token-by-token
+            # True streaming would require WebSocket or SSE support in your API
+            self.chat_panel.add_agent_message(response)
+        else:
+            self.chat_panel.add_agent_message(
+                "I'm not sure I understand. Try:\n"
+                "• 'Search for [product]'\n"
+                "• 'Skip Alibaba'\n"
+                "• 'Set max products to 20'"
+            )
