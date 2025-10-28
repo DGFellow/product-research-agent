@@ -94,7 +94,7 @@ class SearchPanel(QWidget):
         options_layout = QVBoxLayout()
         
         self.headless_check = QCheckBox("Headless Mode (faster)")
-        self.headless_check.setChecked(False)
+        self.headless_check.setChecked(True)
         options_layout.addWidget(self.headless_check)
         
         self.detailed_check = QCheckBox("Detailed Analysis")
